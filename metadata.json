@@ -1,0 +1,7 @@
+{
+  "name": "Zurich – TeaserCraft",
+  "description": "Professional cinematic video generation powered by Gemini, Veo, and Imagen.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}

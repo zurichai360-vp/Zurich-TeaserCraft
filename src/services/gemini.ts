@@ -19,17 +19,40 @@ export class GeminiService {
 
   async generateScript(inputs: UserInputs): Promise<ScriptData> {
     const ai = this.getAiInstance();
-    const prompt = `Generate a cinematic video script for:
-    Company: ${inputs.companyName}
-    Message: ${inputs.highlight}
-    Duration: ${inputs.duration}s
-    Language: ${inputs.language}
-    Style: ${inputs.style}
-    Voice: ${inputs.voiceGender}`;
+    
+    // Construct multimodal content
+    const parts: any[] = [
+      { text: `Generate a cinematic video script for:
+      Company: ${inputs.companyName}
+      Message: ${inputs.highlight}
+      Duration: ${inputs.duration}s
+      Language: ${inputs.language}
+      Style: ${inputs.style}
+      Voice: ${inputs.voiceGender}` }
+    ];
+
+    // Add creative direction if provided
+    if (inputs.creativeDirection) {
+      parts.push({ text: `Creative Direction & References: ${inputs.creativeDirection}. Please follow this direction, emulate the style of mentioned writers or ads, and incorporate the specified concepts or references into the script's structure and tone.` });
+    }
+
+    // Add reference files (images or PDFs) if provided
+    if (inputs.referenceFiles && inputs.referenceFiles.length > 0) {
+      parts.push({ text: "Please carefully analyze the following reference documents (brochures, images, or PDFs) and use their content deeply to craft the script. Prioritize the information found in these documents." });
+      
+      inputs.referenceFiles.forEach(file => {
+        parts.push({
+          inlineData: {
+            data: file.data,
+            mimeType: file.type
+          }
+        });
+      });
+    }
 
     const response = await ai.models.generateContent({
       model: MODEL_TEXT,
-      contents: prompt,
+      contents: parts,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -41,20 +64,27 @@ export class GeminiService {
           },
           required: ["script", "estimated_duration_seconds", "tone_summary"]
         },
-        systemInstruction: `You are Zurich – TeaserCraft's Lead Copywriter, an elite Indian advertising expert with the creative depth of Ogilvy and Leo Burnett. Your goal is to create high-conversion, emotionally compelling voice-over scripts.
-
-STRICT PRINCIPLES:
-1. LANGUAGE: Natural, conversational, and culturally relevant for Indian audiences (urban & semi-urban). No robotic or formal jargon.
-2. HOOK: 2-3 seconds that grab attention using curiosity or bold statements.
-3. STRUCTURE: Hook -> Problem -> Relatable Buildup -> Solution -> Specific Benefits -> Trust/Social Proof -> Strong CTA.
-4. QUALITY: No fluff, short impactful sentences, rhythmic flow for voice delivery. 
-5. NICHE: Adapt tone perfectly to ${inputs.style} and the company's industry.
-6. EMOTIONAL IMPACT: Use FOMO, aspiration, or relief.
-7. FORMAT: Return ONLY the spoken dialogue in the 'script' field. No scene numbers, labels, or visual descriptions. Use line breaks optimized for breathing.
-8. DURATION: Strictly match ${inputs.duration} seconds.
-9. QUALITY BAR: Must feel ready for a top-tier Indian brand ad without edits.
-
-Output JSON only.`
+        systemInstruction: `You are Zurich – TeaserCraft's Lead Copywriter and Narration Specialist. 
+        
+        ${inputs.style === 'Short Film Script' ? 
+          `For this 'Short Film Script' request, act as an award-winning screenwriter. 
+          STRICT PRINCIPLES:
+          1. NARRATIVE: Focus on a tight, compelling narrative arc suitable for a ${inputs.duration}s cinematic short. 
+          2. DIALOGUE/VO: Must be evocative, poetic, or gritty depending on the context. No corporate jargon.
+          3. STRUCTURE: Emotional inciting incident -> Mid-point revelation -> Poignant resolution.
+          4. TONE: Highly cinematic, appealing, and deeply immersive.
+          5. FORMAT: Return ONLY the spoken dialogue or voiceover in the 'script' field. Optimized for performance.` :
+          `You are an elite Indian advertising expert with the creative depth of Ogilvy and Leo Burnett. Your goal is to create high-conversion, emotionally compelling voice-over scripts.
+          STRICT PRINCIPLES:
+          1. LANGUAGE: Natural, conversational, and culturally relevant for Indian audiences.
+          2. HOOK: 2-3 seconds that grab attention.
+          3. STRUCTURE: Hook -> Problem -> Buildup -> Solution -> Benefits -> CTA.
+          4. QUALITY: No fluff, short impactful sentences.
+          5. NICHE: Adapt tone perfectly to ${inputs.style}.`
+        }
+        
+        DURATION: Strictly match ${inputs.duration} seconds.
+        Output JSON only.`
       }
     });
 

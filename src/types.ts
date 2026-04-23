@@ -13,9 +13,16 @@ export type Style =
   | 'Tech-Futuristic'
   | 'Corporate-Professional'
   | 'Urgent-Sale'
-  | 'Mysterious-Intriguing';
+  | 'Mysterious-Intriguing'
+  | 'Short Film Script';
 export type VoiceGender = 'Male' | 'Female';
 export type AspectRatio = '16:9' | '9:16' | '4:5' | '1:1' | '1.91:1';
+
+export interface ReferenceFile {
+  name: string;
+  type: string;
+  data: string; // base64
+}
 
 export interface UserInputs {
   companyName: string;
@@ -24,6 +31,8 @@ export interface UserInputs {
   language: Language;
   style: Style;
   voiceGender: VoiceGender;
+  referenceFiles?: ReferenceFile[];
+  creativeDirection?: string;
 }
 
 export interface ScriptData {

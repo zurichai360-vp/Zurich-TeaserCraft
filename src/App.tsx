@@ -48,7 +48,8 @@ const STYLES: Style[] = [
   'Tech-Futuristic',
   'Corporate-Professional',
   'Urgent-Sale',
-  'Mysterious-Intriguing'
+  'Mysterious-Intriguing',
+  'Short Film Script'
 ];
 const ASPECT_RATIOS: AspectRatio[] = ['16:9', '9:16', '4:5', '1:1', '1.91:1'];
 
@@ -311,6 +312,41 @@ export default function App() {
     }
   };
 
+  const handleReferenceFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    Array.from(files).forEach((file: File) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64data = reader.result as string;
+        const newFile = {
+          name: file.name,
+          type: file.type,
+          data: base64data.split(',')[1] // Just the bytes
+        };
+        setState(prev => ({
+          ...prev,
+          inputs: {
+            ...prev.inputs,
+            referenceFiles: [...(prev.inputs.referenceFiles || []), newFile]
+          }
+        }));
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const removeReferenceFile = (index: number) => {
+    setState(prev => ({
+      ...prev,
+      inputs: {
+        ...prev.inputs,
+        referenceFiles: (prev.inputs.referenceFiles || []).filter((_, i) => i !== index)
+      }
+    }));
+  };
+
   const renderStep1 = () => (
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
@@ -341,8 +377,52 @@ export default function App() {
             onChange={(e) => handleInputChange('highlight', e.target.value)}
             placeholder="What makes this special?"
             rows={3}
-            className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-zurich-gold transition-colors resize-none"
+            className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-zurich-gold transition-colors resize-none mb-4"
           />
+          
+          <div className="space-y-3">
+             <label className="block text-[10px] font-mono uppercase tracking-widest text-zinc-600">Reference Documents (Brochures / Images / PDFs)</label>
+             <div className="flex flex-wrap gap-3">
+               <label className="w-full sm:w-auto h-12 px-6 rounded-xl border border-dashed border-white/20 flex items-center justify-center cursor-pointer hover:border-zurich-gold transition-colors gap-2 bg-white/5">
+                 <FileUp className="w-4 h-4 text-zinc-500" />
+                 <span className="text-xs font-mono uppercase tracking-widest text-zinc-400">Upload Files</span>
+                 <input 
+                   type="file" 
+                   multiple
+                   className="hidden" 
+                   accept="image/*,application/pdf" 
+                   onChange={handleReferenceFileUpload}
+                 />
+               </label>
+               
+               {(state.inputs.referenceFiles || []).map((file, idx) => (
+                 <div key={idx} className="flex items-center gap-2 bg-zinc-800/50 border border-white/10 rounded-xl px-4 py-2 group">
+                   <div className="w-6 h-6 rounded bg-zurich-gold/20 flex items-center justify-center text-zurich-gold">
+                      {file.type.includes('pdf') ? 'P' : 'I'}
+                   </div>
+                   <span className="text-[10px] font-mono truncate max-w-[100px] text-zinc-300">{file.name}</span>
+                   <button 
+                     onClick={() => removeReferenceFile(idx)}
+                     className="text-zinc-500 hover:text-red-400 transition-colors"
+                   >
+                     <Trash2 className="w-3 h-3" />
+                   </button>
+                 </div>
+               ))}
+             </div>
+          </div>
+
+          <div className="space-y-4 mt-6">
+            <label className="block text-xs font-mono uppercase tracking-widest text-zinc-500">Creative Direction / References (Optional)</label>
+            <textarea 
+              value={state.inputs.creativeDirection || ''}
+              onChange={(e) => handleInputChange('creativeDirection', e.target.value)}
+              placeholder="Names of writers, articles, reference ads, type of script, or specific concepts..."
+              rows={3}
+              className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-zurich-gold transition-colors resize-none"
+            />
+            <p className="text-[10px] text-zinc-600 font-mono">Specify style inspirations, reference scripts, or specific hooks you want to include.</p>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-6">
@@ -377,7 +457,15 @@ export default function App() {
               onChange={(e) => handleInputChange('style', e.target.value)}
               className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-zurich-gold transition-colors"
             >
-              {STYLES.map(s => <option key={s} value={s}>{s}</option>)}
+              {STYLES.map(s => (
+                <option 
+                  key={s} 
+                  value={s}
+                  className={s === 'Short Film Script' ? 'text-zurich-gold font-bold bg-zinc-800' : ''}
+                >
+                  {s === 'Short Film Script' ? `🎬 ${s}` : s}
+                </option>
+              ))}
             </select>
           </div>
           <div className="space-y-4">

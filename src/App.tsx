@@ -23,7 +23,10 @@ import {
   Settings2,
   Image as ImageIcon,
   Upload,
-  Trash2
+  Trash2,
+  Save,
+  FileUp,
+  CreditCard
 } from 'lucide-react';
 import { GeminiService } from './services/gemini';
 import { AppState, UserInputs, Language, Style, VoiceGender, AspectRatio, Scene } from './types';
@@ -31,7 +34,22 @@ import { AppState, UserInputs, Language, Style, VoiceGender, AspectRatio, Scene 
 const gemini = new GeminiService();
 
 const LANGUAGES: Language[] = ['English', 'Hindi', 'Hinglish', 'Gujarati'];
-const STYLES: Style[] = ['High Energy', 'Premium-Luxury', 'Emotional/Storytelling', 'Bold-Confident', 'Playful-Friendly', 'Calm-ASMR'];
+const STYLES: Style[] = [
+  'High Energy', 
+  'Premium-Luxury', 
+  'Emotional/Storytelling', 
+  'Bold-Confident', 
+  'Playful-Friendly', 
+  'Calm-ASMR',
+  'Minimalist-Modern',
+  'Traditional-Heritage',
+  'Quirky-Humorous',
+  'Inspirational-Hopeful',
+  'Tech-Futuristic',
+  'Corporate-Professional',
+  'Urgent-Sale',
+  'Mysterious-Intriguing'
+];
 const ASPECT_RATIOS: AspectRatio[] = ['16:9', '9:16', '4:5', '1:1', '1.91:1'];
 
 export default function App() {
@@ -56,6 +74,11 @@ export default function App() {
 
   const [voiceAudioUrl, setVoiceAudioUrl] = useState<string | null>(null);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+
+  // Reset audio when script or voice settings change
+  useEffect(() => {
+    setVoiceAudioUrl(null);
+  }, [state.script?.script, state.inputs.voiceGender, state.inputs.style]);
 
   const handleInputChange = (field: keyof UserInputs, value: any) => {
     setState(prev => ({
@@ -180,6 +203,25 @@ export default function App() {
     }
   };
 
+  const regeneratePromptForScene = async (index: number) => {
+    const scene = state.scenes[index];
+    setState(prev => ({ ...prev, isGenerating: true, error: null }));
+    
+    try {
+      const newPrompts = await gemini.regenerateScenePrompt(state.inputs, scene, state.aspectRatio);
+      const newScenes = [...state.scenes];
+      newScenes[index] = { 
+        ...scene, 
+        image_prompt: newPrompts.image_prompt, 
+        video_prompt: newPrompts.video_prompt,
+        video_url: undefined
+      };
+      setState(prev => ({ ...prev, scenes: newScenes, isGenerating: false }));
+    } catch (err: any) {
+      setState(prev => ({ ...prev, error: err.message, isGenerating: false }));
+    }
+  };
+
   const handlePromptChange = (index: number, newPrompt: string) => {
     const newScenes = [...state.scenes];
     newScenes[index] = { ...newScenes[index], image_prompt: newPrompt };
@@ -217,6 +259,56 @@ export default function App() {
     a.href = url;
     a.download = `Scene_${index + 1}_Image.png`;
     a.click();
+  };
+
+  const saveProject = () => {
+    const projectData = {
+      inputs: state.inputs,
+      script: state.script,
+      aspectRatio: state.aspectRatio,
+      scenes: state.scenes.map(s => ({
+        ...s,
+        image_url: s.image_url?.startsWith('data:') ? s.image_url : null, // Only save base64 images
+        video_url: null, // Blob URLs won't persist
+      })),
+      step: state.step
+    };
+    const blob = new Blob([JSON.stringify(projectData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `TeaserCraft_Project_${state.inputs.companyName.replace(/\s+/g, '_') || 'Untitled'}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const loadProject = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const projectData = JSON.parse(event.target?.result as string);
+        setState(prev => ({
+          ...prev,
+          ...projectData,
+          isGenerating: false,
+          error: null
+        }));
+      } catch (err) {
+        setState(prev => ({ ...prev, error: 'Failed to load project file.' }));
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const connectPaidAccount = async () => {
+    try {
+      await (window as any).aistudio.openSelectKey();
+    } catch (err: any) {
+      setState(prev => ({ ...prev, error: 'Failed to open account selection.' }));
+    }
   };
 
   const renderStep1 = () => (
@@ -425,9 +517,15 @@ export default function App() {
       animate={{ opacity: 1, scale: 1 }}
       className="max-w-2xl mx-auto space-y-8"
     >
-      <div className="text-center space-y-2">
-        <h2 className="text-4xl font-serif italic">Size & Format</h2>
-        <p className="text-zinc-500">Finalize the technical details</p>
+      <div className="flex items-center justify-between">
+        <button onClick={() => setState(p => ({ ...p, step: 2 }))} className="text-zinc-500 hover:text-white flex items-center gap-2">
+          <ChevronLeft className="w-4 h-4" /> Back to Script
+        </button>
+        <div className="text-center flex-1">
+          <h2 className="text-4xl font-serif italic">Size & Format</h2>
+          <p className="text-zinc-500">Finalize the technical details</p>
+        </div>
+        <div className="w-24" /> {/* Spacer */}
       </div>
 
       <div className="glass p-8 rounded-3xl space-y-8">
@@ -471,7 +569,12 @@ export default function App() {
       className="max-w-6xl mx-auto space-y-8"
     >
       <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-serif italic">Image Generation</h2>
+        <div className="flex items-center gap-6">
+          <button onClick={() => setState(p => ({ ...p, step: 3 }))} className="text-zinc-500 hover:text-white flex items-center gap-2">
+            <ChevronLeft className="w-4 h-4" /> Back
+          </button>
+          <h2 className="text-3xl font-serif italic">Image Generation</h2>
+        </div>
         <div className="flex items-center gap-4">
           <button 
             onClick={() => setState(p => ({ ...p, step: 5 }))}
@@ -557,7 +660,16 @@ export default function App() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <p className="text-[10px] font-mono uppercase tracking-widest text-zinc-500">Image Prompt</p>
-                  <span className="text-[10px] text-zinc-600 font-mono">EDITABLE</span>
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={() => regeneratePromptForScene(idx)}
+                      disabled={state.isGenerating}
+                      className="text-[10px] text-zurich-gold font-mono hover:underline disabled:opacity-50"
+                    >
+                      REGENERATE
+                    </button>
+                    <span className="text-[10px] text-zinc-600 font-mono">EDITABLE</span>
+                  </div>
                 </div>
                 <textarea 
                   value={scene.image_prompt}
@@ -580,7 +692,12 @@ export default function App() {
       className="max-w-6xl mx-auto space-y-8"
     >
       <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-serif italic">Video Production</h2>
+        <div className="flex items-center gap-6">
+          <button onClick={() => setState(p => ({ ...p, step: 4 }))} className="text-zinc-500 hover:text-white flex items-center gap-2">
+            <ChevronLeft className="w-4 h-4" /> Back
+          </button>
+          <h2 className="text-3xl font-serif italic">Video Production</h2>
+        </div>
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2 text-zinc-500 text-xs font-mono">
             <Settings2 className="w-4 h-4" />
@@ -614,13 +731,23 @@ export default function App() {
                   )}
                   <div className="relative z-10 text-center p-6 space-y-4">
                     <Video className="w-8 h-8 mx-auto text-zurich-gold" />
-                    <button 
-                      onClick={() => generateVideoForScene(idx)}
-                      disabled={state.isGenerating}
-                      className="text-xs font-mono uppercase tracking-widest text-white bg-black/50 backdrop-blur-md px-6 py-2 rounded-full border border-white/10 hover:bg-zurich-gold hover:text-black transition-all disabled:opacity-50"
-                    >
-                      {state.isGenerating ? 'Processing...' : 'Generate Cinematic Clip'}
-                    </button>
+                    <div className="flex flex-col gap-2">
+                      <button 
+                        onClick={() => generateVideoForScene(idx)}
+                        disabled={state.isGenerating}
+                        className="text-xs font-mono uppercase tracking-widest text-white bg-black/50 backdrop-blur-md px-6 py-2 rounded-full border border-white/10 hover:bg-zurich-gold hover:text-black transition-all disabled:opacity-50"
+                      >
+                        {state.isGenerating ? 'Processing...' : 'Generate Cinematic Clip'}
+                      </button>
+                      <button 
+                        onClick={() => regeneratePromptForScene(idx)}
+                        disabled={state.isGenerating}
+                        className="text-[10px] font-mono uppercase tracking-widest text-zinc-400 hover:text-zurich-gold transition-colors flex items-center justify-center gap-1"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                        Regenerate Safer Prompt
+                      </button>
+                    </div>
                     {scene.image_url && (
                       <p className="text-[10px] font-mono text-zinc-400 uppercase tracking-widest">Using Generated Image as Start Frame</p>
                     )}
@@ -656,6 +783,11 @@ export default function App() {
       animate={{ opacity: 1, scale: 1 }}
       className="max-w-4xl mx-auto text-center space-y-12"
     >
+      <div className="flex justify-start">
+        <button onClick={() => setState(p => ({ ...p, step: 5 }))} className="text-zinc-500 hover:text-white flex items-center gap-2">
+          <ChevronLeft className="w-4 h-4" /> Back to Production
+        </button>
+      </div>
       <div className="space-y-4">
         <div className="w-20 h-20 bg-zurich-gold rounded-full flex items-center justify-center mx-auto mb-8 shadow-[0_0_50px_rgba(212,175,55,0.3)]">
           <CheckCircle2 className="w-10 h-10 text-black" />
@@ -717,6 +849,32 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-4">
+          <button 
+            onClick={connectPaidAccount}
+            className="flex items-center gap-2 text-emerald-500 hover:text-emerald-400 transition-colors"
+            title="Connect Paid Google Cloud Project"
+          >
+            <CreditCard className="w-5 h-5" />
+            <span className="text-[10px] font-mono uppercase tracking-widest hidden lg:block">Connect Paid Account</span>
+          </button>
+          <div className="w-[1px] h-8 bg-white/10 mx-2" />
+          <button 
+            onClick={saveProject}
+            className="flex items-center gap-2 text-zinc-500 hover:text-zurich-gold transition-colors"
+            title="Save Project"
+          >
+            <Save className="w-5 h-5" />
+            <span className="text-[10px] font-mono uppercase tracking-widest hidden lg:block">Save</span>
+          </button>
+          <label 
+            className="flex items-center gap-2 text-zinc-500 hover:text-zurich-gold transition-colors cursor-pointer"
+            title="Load Project"
+          >
+            <FileUp className="w-5 h-5" />
+            <span className="text-[10px] font-mono uppercase tracking-widest hidden lg:block">Load</span>
+            <input type="file" className="hidden" accept=".json" onChange={loadProject} />
+          </label>
+          <div className="w-[1px] h-8 bg-white/10 mx-2" />
           <div className="text-right hidden sm:block">
             <p className="text-[10px] font-mono text-zinc-500 uppercase">System Status</p>
             <p className="text-[10px] font-mono text-emerald-500">All Engines Online</p>

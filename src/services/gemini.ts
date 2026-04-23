@@ -3,7 +3,7 @@ import { UserInputs, ScriptData, Scene, AspectRatio, VoiceGender } from "../type
 
 const MODEL_TEXT = "gemini-3.1-pro-preview";
 const MODEL_IMAGE = "gemini-3.1-flash-image-preview";
-const MODEL_VIDEO = "veo-3.1-fast-generate-preview";
+const MODEL_VIDEO = "veo-3.1-generate-preview";
 const MODEL_TTS = "gemini-2.5-flash-preview-tts";
 
 export class GeminiService {
@@ -41,7 +41,20 @@ export class GeminiService {
           },
           required: ["script", "estimated_duration_seconds", "tone_summary"]
         },
-        systemInstruction: "You are Zurich – TeaserCraft AI. Generate a professional cinematic script based on user inputs. The 'script' field must contain ONLY the spoken dialogue or voiceover text. Do NOT include visual descriptions, scene numbers, or timestamps in the script text. Output JSON only."
+        systemInstruction: `You are Zurich – TeaserCraft's Lead Copywriter, an elite Indian advertising expert with the creative depth of Ogilvy and Leo Burnett. Your goal is to create high-conversion, emotionally compelling voice-over scripts.
+
+STRICT PRINCIPLES:
+1. LANGUAGE: Natural, conversational, and culturally relevant for Indian audiences (urban & semi-urban). No robotic or formal jargon.
+2. HOOK: 2-3 seconds that grab attention using curiosity or bold statements.
+3. STRUCTURE: Hook -> Problem -> Relatable Buildup -> Solution -> Specific Benefits -> Trust/Social Proof -> Strong CTA.
+4. QUALITY: No fluff, short impactful sentences, rhythmic flow for voice delivery. 
+5. NICHE: Adapt tone perfectly to ${inputs.style} and the company's industry.
+6. EMOTIONAL IMPACT: Use FOMO, aspiration, or relief.
+7. FORMAT: Return ONLY the spoken dialogue in the 'script' field. No scene numbers, labels, or visual descriptions. Use line breaks optimized for breathing.
+8. DURATION: Strictly match ${inputs.duration} seconds.
+9. QUALITY BAR: Must feel ready for a top-tier Indian brand ad without edits.
+
+Output JSON only.`
       }
     });
 
@@ -175,6 +188,7 @@ export class GeminiService {
         CRITICAL: Visual prompts (image_prompt and video_prompt) MUST be perfectly aligned with the company's industry and services: "${inputs.highlight}". 
         Avoid generic stock-photo descriptions. If it's a luxury watch brand, show craftsmanship and elegance. If it's a tech startup, show innovation and modern workspace. 
         Ensure the visuals reflect the brand's unique value proposition. 
+        SAFETY: Avoid any prompts that could trigger safety filters (no violence, no copyrighted characters, no sensitive public figures, no medical/legal advice visuals). Keep descriptions professional and brand-safe.
         The aspect ratio is ${aspectRatio}, so describe compositions that fit this frame. 
         Output JSON only.`
       }
@@ -182,6 +196,53 @@ export class GeminiService {
 
     const data = JSON.parse(response.text || "{}");
     return data.scenes;
+  }
+
+  async regenerateScenePrompt(inputs: UserInputs, scene: Scene, aspectRatio: AspectRatio): Promise<{ image_prompt: string, video_prompt: string }> {
+    const ai = this.getAiInstance();
+    
+    const parts: any[] = [
+      { text: `The previous prompts for this scene were blocked by safety filters. Generate new, safer, and more professional cinematic visual prompts for:
+      Company Name: ${inputs.companyName}
+      Industry & Services: ${inputs.highlight}
+      Script Line: ${scene.script_line}
+      Original Image Prompt: ${scene.image_prompt}
+      Original Video Prompt: ${scene.video_prompt}` }
+    ];
+
+    // Include the current generated image as context if it exists
+    if (scene.image_url) {
+      parts.push({
+        inlineData: {
+          data: scene.image_url.split(',')[1],
+          mimeType: "image/png"
+        }
+      });
+      parts.push({ text: "MANDATORY: Use the provided image as the visual reference. The new prompts must describe this image accurately but in a way that is safe and professional." });
+    }
+
+    const response = await ai.models.generateContent({
+      model: MODEL_TEXT,
+      contents: { parts },
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            image_prompt: { type: Type.STRING },
+            video_prompt: { type: Type.STRING }
+          },
+          required: ["image_prompt", "video_prompt"]
+        },
+        systemInstruction: `You are a cinematic director. Generate ultra-safe, professional, and brand-appropriate visual prompts. 
+        CRITICAL: Avoid any elements that could trigger safety filters. No people (unless essential and generic), no violence, no copyrighted items, no intense action, no sensitive symbols. 
+        Focus on abstract beauty, high-end product shots, architectural elegance, or nature. 
+        Ensure the visuals are perfectly aligned with the company's industry: "${inputs.highlight}".
+        Output JSON only.`
+      }
+    });
+
+    return JSON.parse(response.text || "{}");
   }
 
   async generateImage(scene: Scene, aspectRatio: AspectRatio): Promise<string> {
@@ -250,33 +311,74 @@ export class GeminiService {
     // Re-init to use latest key
     const ai = this.getAiInstance();
 
+    const videoAspectRatio = this.mapVideoAspectRatio(aspectRatio);
     const videoConfig: any = {
       model: MODEL_VIDEO,
-      prompt: `${scene.video_prompt}. STRICT Aspect Ratio: ${aspectRatio}.`,
+      prompt: scene.video_prompt,
       config: {
         numberOfVideos: 1,
         resolution: '720p',
-        aspectRatio: this.mapVideoAspectRatio(aspectRatio)
+        aspectRatio: videoAspectRatio
       }
     };
 
-    // Use generated image as starting frame if available
-    if (scene.image_url) {
+    // Use generated image as starting frame ONLY if aspect ratios match
+    const isSupportedRatio = aspectRatio === '16:9' || aspectRatio === '9:16';
+    if (scene.image_url && isSupportedRatio) {
       videoConfig.image = {
         imageBytes: scene.image_url.split(',')[1],
         mimeType: 'image/png'
       };
     }
 
-    let operation = await ai.models.generateVideos(videoConfig);
-
-    while (!operation.done) {
-      await new Promise(resolve => setTimeout(resolve, 5000));
-      operation = await ai.operations.getVideosOperation({ operation: operation });
+    let operation;
+    try {
+      operation = await ai.models.generateVideos(videoConfig);
+    } catch (err: any) {
+      console.error("Initial Video Request Error:", err);
+      if (err.message?.includes("Requested entity was not found")) {
+        await (window as any).aistudio.openSelectKey();
+        throw new Error("API Key session expired. Please select your paid project 'Zurich Atelier AI' again and retry.");
+      }
+      throw err;
     }
 
+    // Polling with detailed logging
+    while (!operation.done) {
+      await new Promise(resolve => setTimeout(resolve, 10000));
+      operation = await ai.operations.getVideosOperation({ operation: operation });
+      console.log("Video Generation Polling Status:", { done: operation.done, name: operation.name });
+    }
+
+    if (operation.error) {
+      console.error("Video Operation Error:", operation.error);
+      if (operation.error.message?.includes("Requested entity was not found")) {
+        await (window as any).aistudio.openSelectKey();
+        throw new Error("API Key session expired. Please select your paid project 'Zurich Atelier AI' again and retry.");
+      }
+      throw new Error(`Video generation failed: ${operation.error.message}`);
+    }
+
+    console.log("Full Video Operation Response:", JSON.stringify(operation, null, 2));
+
     const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
-    if (!downloadLink) throw new Error("Video generation failed: No download link returned.");
+    if (!downloadLink) {
+      const response = operation.response || {};
+      const isFiltered = response.raiMediaFilteredCount > 0 || response.raiMediaFilteredReasons;
+      
+      if (isFiltered) {
+        throw new Error("Video generation blocked by safety filters. The prompt or generated content may contain restricted elements. Please try adjusting the scene description or prompt.");
+      }
+
+      const state = JSON.stringify({
+        done: operation.done,
+        hasResponse: !!operation.response,
+        responseKeys: operation.response ? Object.keys(operation.response) : [],
+        videosCount: operation.response?.generatedVideos?.length,
+        metadata: operation.metadata
+      });
+      throw new Error(`Video generation failed: No download link returned. State: ${state}`);
+    }
 
     const response = await fetch(downloadLink, {
       method: 'GET',

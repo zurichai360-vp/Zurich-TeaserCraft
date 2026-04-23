@@ -1,5 +1,19 @@
 export type Language = 'English' | 'Hindi' | 'Hinglish' | 'Gujarati';
-export type Style = 'High Energy' | 'Premium-Luxury' | 'Emotional/Storytelling' | 'Bold-Confident' | 'Playful-Friendly' | 'Calm-ASMR';
+export type Style = 
+  | 'High Energy' 
+  | 'Premium-Luxury' 
+  | 'Emotional/Storytelling' 
+  | 'Bold-Confident' 
+  | 'Playful-Friendly' 
+  | 'Calm-ASMR'
+  | 'Minimalist-Modern'
+  | 'Traditional-Heritage'
+  | 'Quirky-Humorous'
+  | 'Inspirational-Hopeful'
+  | 'Tech-Futuristic'
+  | 'Corporate-Professional'
+  | 'Urgent-Sale'
+  | 'Mysterious-Intriguing';
 export type VoiceGender = 'Male' | 'Female';
 export type AspectRatio = '16:9' | '9:16' | '4:5' | '1:1' | '1.91:1';
 
